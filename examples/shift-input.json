@@ -1,0 +1,8 @@
+{
+  "trial_id": "CX-17",
+  "report_unit": "u",
+  "a": {"table_id": "meter-a", "unit": "u", "factor": "1", "rows": [["0", "2", "1"]]},
+  "b": {"table_id": "meter-b", "unit": "u", "factor": "1", "rows": [["0", "1", "1"], ["1", "2", "3"]]},
+  "lag_window_seconds": ["0", "2"],
+  "min_common_seconds": "1/2"
+}
