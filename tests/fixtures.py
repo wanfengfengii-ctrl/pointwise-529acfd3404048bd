@@ -21,7 +21,8 @@ def observations(*rows, unit='u'):
 
 
 def count(db, table):
-    if table not in {'trial_registry', 'ledger_revisions', 'source_issues', 'review_inbox', 'review_reports'}:
+    if table not in {'trial_registry', 'ledger_revisions', 'source_issues', 'review_inbox',
+                     'review_reports', 'trimmed_issues', 'trimmed_reports'}:
         raise ValueError('unknown fixture table')
     return db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
 

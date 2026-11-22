@@ -2,9 +2,11 @@ from dataclasses import dataclass
 import sqlite3
 
 from analysis.lag_set import optimal_lags
-from handoff.acceptance import read_accepted
+from analysis.trimmed import optimal_trimmed_lags
+from handoff.acceptance import read_accepted, read_accepted_trimmed
 from handoff.issuer import FrozenCurve, validate_pair_sources
 from reports.issue import ReportParent, ReportSnapshot, issue_report
+from reports.trimmed import issue_trimmed_report
 from trial.rationals import RationalInput, parse_rational, require_serial
 
 
@@ -44,3 +46,21 @@ def analyze(db: sqlite3.Connection, request: LagRequest) -> int:
         request.lower, request.upper, request.min_seconds, result.minimum_mse, result.intervals,
     )
     return issue_report(db, report)
+
+
+def analyze_trimmed(
+    db: sqlite3.Connection,
+    piece_id: int,
+    max_trim_seconds: RationalInput,
+    min_retained_seconds: RationalInput,
+) -> int:
+    require_serial(piece_id, 'piece number')
+    trim = parse_rational(max_trim_seconds)
+    minimum = parse_rational(min_retained_seconds)
+    if trim < 0:
+        raise ValueError('trim budget must be nonnegative')
+    if minimum <= 0:
+        raise ValueError('minimum retained time must be positive')
+    piece = read_accepted_trimmed(db, piece_id)
+    result = optimal_trimmed_lags(piece.evidence, trim, minimum)
+    return issue_trimmed_report(db, piece, trim, minimum, result)

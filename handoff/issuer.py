@@ -112,6 +112,14 @@ def initialize_issue_register(db: sqlite3.Connection) -> None:
             evidence TEXT NOT NULL
         )
     ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS trimmed_issues (
+            piece_id INTEGER PRIMARY KEY REFERENCES source_issues(piece_id),
+            a_revision_id INTEGER NOT NULL REFERENCES ledger_revisions(revision_id),
+            b_revision_id INTEGER NOT NULL REFERENCES ledger_revisions(revision_id),
+            payload TEXT NOT NULL
+        )
+    ''')
 
 
 def issue_curve(db: sqlite3.Connection, source: FrozenSource, evidence: CurveEvidence) -> FrozenCurve:
@@ -123,3 +131,31 @@ def issue_curve(db: sqlite3.Connection, source: FrozenSource, evidence: CurveEvi
             INSERT INTO source_issues(revision_id, source, evidence) VALUES (?, ?, ?)
         ''', (source.revision_id, source_text, evidence_text))
         return FrozenCurve(cursor.lastrowid, source, evidence)
+
+
+def issue_trimmed(
+    db: sqlite3.Connection,
+    sources: tuple[FrozenSource, FrozenSource],
+    lower,
+    upper,
+    joint_evidence,
+) -> int:
+    from handoff.joint import JointEvidence, encode_joint_piece
+    if not isinstance(joint_evidence, JointEvidence):
+        raise ValueError('trimmed issue requires joint evidence')
+    a, b = sources
+    db.execute('BEGIN IMMEDIATE')
+    with db:
+        cursor = db.execute('''
+            INSERT INTO source_issues(revision_id, source, evidence) VALUES (?, ?, ?)
+        ''', (a.revision_id, _json(source_payload(a)),
+              _json({'trimmed': True, 'b_revision_id': b.revision_id})))
+        piece_id = cursor.lastrowid
+        from handoff.joint import JointPiece
+        piece = JointPiece(piece_id, sources, lower, upper, joint_evidence)
+        payload = encode_joint_piece(piece)
+        db.execute('''
+            INSERT INTO trimmed_issues(piece_id, a_revision_id, b_revision_id, payload)
+            VALUES (?, ?, ?, ?)
+        ''', (piece_id, a.revision_id, b.revision_id, payload))
+        return piece_id

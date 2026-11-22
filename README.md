@@ -41,3 +41,18 @@ V1 外层字段为 `version`、`piece_id`、`source` 和 `evidence`。`source` �
 复核时乙表整体加滞后，`D` 为双方同时有效的时长，`E` 为该时域上的读值差平方积分。有效零参与，缺测无贡献。`D` 达到门槛时比较精确的 `E/D`，其单位为报告读值单位的平方。闭窗可只有一个点。并列范围以升序闭区间给出，相接分量合并，孤点的两端相同。明确空结果在 JSON 中表示为 `status: empty`、`minimum_mse: null`、`intervals: []`。
 
 未知批号、修订号、件号、报告号使用 `LookupError`。非法登记、单位、区间、父号归属、件内容或复核参数使用 `ValueError`。SQLite 操作错误传播给调用方，未提交的写入回滚。按报告号领取和导出直接使用签发快照，后续更正不影响历史结果。
+
+## V2 联合件与尖峰剔除（夜班关站后）
+
+V2 在原初始化入口补建两张表，旧库可重复初始化：发行侧 `trimmed_issues` 与 `source_issues` 共用件号域（外键引用，件号全站不冲突），复核侧 `trimmed_reports` 与 `review_reports` 各自独立报告号域；联合件本身复用 `review_inbox`，与 V1 件共用接纳号域。V1 接口、表结构、旧件和历史报告保持不变，V1/V2 信封版本互不受理。
+
+| 函数 | 调用与返回 |
+| --- | --- |
+| `handoff.freeze.freeze_trimmed` | `freeze_trimmed(db, a_revision_id, b_revision_id, lower, upper)` 选取同试验、同报告单位的确切甲乙修订并固定有理闭滞后窗，返回 version 2 联合件 JSON 文本。接受单点窗；原始观测行和单表曲线留站，件内只有联合残差证据。 |
+| `handoff.acceptance.accept_trimmed` | `accept_trimmed(review_db, encoded)` 校验证据不变量并按件内 `piece_id` 保存，返回接纳号。规范化后等价重投沿用原号；同号异文抛 `ValueError` 并保留首件。 |
+| `analysis.selection.analyze_trimmed` | `analyze_trimmed(review_db, piece_id, max_trim_seconds, min_retained_seconds)` 凭接纳号申报非负有理剔除上限和正有理保留门槛，核定后提交并返回报告号。 |
+| `reports.read.read_trimmed` / `export_trimmed` | 按号读取报告字典或导出 JSON 文本，二者解析值一致，直接使用提交快照。 |
+
+联合件外层字段为 `version`（整数 2）、`piece_id`、`sources`（按甲乙顺序的两个 V1 来源对象）、`lag_window_seconds`（有理闭窗）和 `evidence`。证据把闭窗按边界碰撞点切成单元（cell），每单元一行或多行 `[slope, intercept, squared_error]`：窗内任一实数滞后 `t` 上，该共同有效成分时长为 `slope*t + intercept`（`slope ∈ {-1,0,1}`），平方差为非负有理数；零值有效，缺测无成分，无共同时间的单元行列表为空。接纳时校验：单元闭接且铺满整窗、行时长在单元两端非负、平方差非负、相邻单元在共享结点的按误差时长合计一致。任一实数滞后的共同总时长与各平方差成分均可由件内信息离线重建。
+
+核定时乙表时间坐标整体加滞后，只在双方共同有效时间内按可分割时长剔除，高误差成分优先剔除使保留均方差最小：可行滞后满足共同时长 `D(t) >= min_retained_seconds`，实际保留 `R(t) = max(min_retained_seconds, D(t) - max_trim_seconds)`，保留平方差积分除以 `R(t)` 得均方差，再在闭窗取全局最小。全部最优滞后输出为升序最大有理闭区间，相交或相接合并，孤点两端相同；无解签 `status: empty`、`minimum_mse: null`、`intervals: []`。零额度、同窗、同源修订和同门槛时结果与 V1 一致。报告顶层字段为 `version`（2）、`report_id`、`piece_id`、`sources`、`request`、`result`，所有有理数按 V1 约定化为文本。
